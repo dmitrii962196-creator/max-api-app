@@ -24,15 +24,27 @@ class GenerateRequest(BaseModel):
     ratio: str
 
 STYLE_MODIFIERS = {
-    "Реализм": "realistic photo, 8k, detailed fur, highly detailed photo, 35mm lens, sharp focus",
-    "Кино": "cinematic movie scene, dramatic lighting, 35mm photography, cinematic atmosphere",
-    "Аниме": "vibrant anime style illustration, Makoto Shinkai art, beautiful anime colors",
-    "3D": "3D digital render, Unreal Engine 5, Octane 3D render, smooth raytracing",
-    "GTA 5": "Grand Theft Auto V video game loading screen art style, Rockstar art"
+    "Реализм": "award-winning wildlife photography, photorealistic, 8k resolution, raw photo, highly detailed fur, crisp focus, studio lighting",
+    "Кино": "cinematic movie still, 35mm film photography, dramatic atmospheric lighting, shallow depth of field, detailed fur texture",
+    "Аниме": "vibrant Japanese anime style illustration, Makoto Shinkai aesthetic, distinct colorful lines, rich background",
+    "3D": "3D digital render, Pixar and Unreal Engine 5 style, Octane 3D render, smooth cute 3D character",
+    "GTA 5": "Grand Theft Auto V loading screen concept art style, bold vector digital illustration, Rockstar Games"
 }
 
-def translate_to_en(text: str, api_key: str | None) -> str:
-    # 1. Перевод через APImira
+def enhance_and_translate(text: str, api_key: str | None) -> str:
+    # Очистка вводных слов
+    clean = text.lower()
+    for w in ["сгенерируй", "сгенирируй", "создай", "нарисуй", "покажи"]:
+        clean = clean.replace(w, "")
+    clean = clean.strip()
+
+    # Если в запросе упомянут енот — жестко прописываем ключевые видовые признаки, чтобы не было путаницы с котом
+    extra_details = ""
+    if any(k in clean for k in ["енот", "енота", "енотик"]):
+        extra_details = "a genuine wild raccoon, Procyon lotor, black eye mask markings, ringed striped tail, raccoon whiskers"
+
+    # Перевод через модель APImira
+    translated = ""
     if api_key:
         try:
             url = "https://apimira.com/v1/chat/completions"
@@ -45,51 +57,46 @@ def translate_to_en(text: str, api_key: str | None) -> str:
                 "messages": [
                     {
                         "role": "system",
-                        "content": "Translate the user input into a concise English descriptive prompt for image generation. Return ONLY the translation, no extra words."
+                        "content": "Translate Russian query into a vivid English subject description. Output ONLY the English subject words, no extra commentary."
                     },
-                    {"role": "user", "content": text}
+                    {"role": "user", "content": clean}
                 ],
-                "max_tokens": 70
+                "max_tokens": 50
             }
-            r = requests.post(url, headers=headers, json=payload, timeout=6)
+            r = requests.post(url, headers=headers, json=payload, timeout=5)
             if r.status_code == 200:
-                t = r.json()["choices"][0]["message"]["content"].strip()
-                if t:
-                    return t.replace('"', '').replace("'", "")
+                translated = r.json()["choices"][0]["message"]["content"].strip()
+                translated = translated.replace('"', '').replace("'", "")
         except Exception:
             pass
 
-    # 2. Резервный перевод Google
-    try:
-        url = "https://translate.googleapis.com/translate_a/single"
-        params = {"client": "gtx", "sl": "auto", "tl": "en", "dt": "t", "q": text}
-        res = requests.get(url, params=params, timeout=3).json()
-        t = "".join([s[0] for s in res[0] if s[0]])
-        if t:
-            return t
-    except Exception:
-        pass
+    # Резервный перевод Google
+    if not translated:
+        try:
+            url = "https://translate.googleapis.com/translate_a/single"
+            params = {"client": "gtx", "sl": "auto", "tl": "en", "dt": "t", "q": clean}
+            res = requests.get(url, params=params, timeout=3).json()
+            translated = "".join([s[0] for s in res[0] if s[0]])
+        except Exception:
+            translated = clean
 
-    return text
+    # Собираем промпт с анатомическими уточнениями
+    if extra_details:
+        return f"{translated}, {extra_details}"
+    return translated
 
 @app.get("/")
 def health_check():
     return {"status": "ok"}
 
-# Эндпоинт прямого проксирования изображения
 @app.get("/api/image-proxy")
 def image_proxy(prompt: str, style: str = "Реализм", ratio: str = "1:1"):
     api_key = os.getenv("APIMIRA_KEY")
 
-    # Очистка
-    clean_text = prompt.lower()
-    for w in ["сгенерируй", "сгенирируй", "создай", "нарисуй", "покажи"]:
-        clean_text = clean_text.replace(w, "")
-    clean_text = clean_text.strip()
-
-    english_prompt = translate_to_en(clean_text, api_key)
+    # Формируем точный детальный промпт
+    english_subject = enhance_and_translate(prompt, api_key)
     style_suffix = STYLE_MODIFIERS.get(style, "")
-    full_prompt = f"a detailed photo of {english_prompt}, {style_suffix}".strip(", ")
+    full_prompt = f"{english_subject}, {style_suffix}".strip(", ")
     encoded_prompt = urllib.parse.quote(full_prompt)
 
     dimensions = {
@@ -100,25 +107,23 @@ def image_proxy(prompt: str, style: str = "Реализм", ratio: str = "1:1"):
     w, h = dimensions.get(ratio, (768, 768))
     seed = random.randint(100000, 9999999)
 
-    # Сервер сам скачивает сгенерированную картинку
+    # Генерация через Flux
     source_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={w}&height={h}&model=flux&seed={seed}&nologo=true"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     }
-    img_resp = requests.get(source_url, headers=headers, timeout=40)
 
-    if img_resp.status_code != 200:
-        raise HTTPException(status_code=500, detail="Ошибка загрузки изображения")
+    resp = requests.get(source_url, headers=headers, timeout=40)
+    if resp.status_code != 200:
+        raise HTTPException(status_code=500, detail="Ошибка генерации изображения")
 
-    # Отдаем байты картинки напрямую клиенту под видом локального файла
-    return Response(content=img_resp.content, media_type="image/jpeg")
+    return Response(content=resp.content, media_type="image/jpeg")
 
 @app.post("/api/generate")
 def generate_media(req: GenerateRequest):
     encoded_prompt = urllib.parse.quote(req.prompt)
     encoded_style = urllib.parse.quote(req.style)
     encoded_ratio = urllib.parse.quote(req.ratio)
-    
-    # Возвращаем ссылку на наш собственный бэкенд на Render!
+
     internal_url = f"https://max-ai-backend-9qd1.onrender.com/api/image-proxy?prompt={encoded_prompt}&style={encoded_style}&ratio={encoded_ratio}&t={int(time.time())}"
     return {"type": "image", "url": internal_url}
