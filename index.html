@@ -24,7 +24,7 @@
 
     .input-group { display: flex; flex-direction: column; gap: 6px; }
     label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 600; }
-    textarea { width: 100%; height: 90px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); padding: 10px; font-size: 14px; resize: none; outline: none; }
+    textarea { width: 100%; height: 80px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); padding: 10px; font-size: 14px; resize: none; outline: none; }
     textarea:focus { border-color: var(--accent); }
 
     .chips-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
@@ -40,26 +40,23 @@
     .generate-btn:hover { background: var(--accent-hover); }
     .generate-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-    .preview-card { flex: 1; background: var(--card-bg); border: 1px dashed var(--border); border-radius: 14px; display: flex; align-items: center; justify-content: center; overflow: hidden; min-height: 240px; position: relative; }
+    .preview-card { flex: 1; background: var(--card-bg); border: 1px dashed var(--border); border-radius: 14px; display: flex; align-items: center; justify-content: center; overflow: hidden; min-height: 250px; position: relative; }
     .preview-placeholder { color: var(--text-muted); font-size: 13px; text-align: center; padding: 16px; }
-    .preview-card img, .preview-card video { width: 100%; height: 100%; object-fit: contain; }
+    .preview-card img { width: 100%; height: auto; max-height: 380px; object-fit: contain; border-radius: 10px; }
   </style>
 </head>
 <body>
 
-  <!-- Вкладки Фото / Видео -->
   <div class="tabs">
     <button class="tab-btn active" onclick="setMode('image')">Фото</button>
     <button class="tab-btn" onclick="setMode('video')">Видео</button>
   </div>
 
-  <!-- Описание -->
   <div class="input-group">
     <label>Промпт</label>
-    <textarea id="promptInput" placeholder="Опишите сцену для генерации..."></textarea>
+    <textarea id="promptInput" placeholder="Опишите сцену (например: енот в военной форме)..."></textarea>
   </div>
 
-  <!-- Стили -->
   <div class="input-group">
     <label>Стиль</label>
     <div class="chips-row" id="styleChips">
@@ -71,7 +68,6 @@
     </div>
   </div>
 
-  <!-- Формат кадра -->
   <div class="input-group">
     <label>Формат</label>
     <div class="ratio-group" id="ratioGroup">
@@ -85,9 +81,8 @@
     <span>✨ Сгенерировать</span>
   </button>
 
-  <!-- Результат -->
   <div class="preview-card" id="previewArea">
-    <div class="preview-placeholder">Результат появится здесь после обработки</div>
+    <div class="preview-placeholder">Результат появится здесь</div>
   </div>
 
   <script>
@@ -99,9 +94,6 @@
       currentMode = mode;
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
       event.target.classList.add('active');
-      document.getElementById('promptInput').placeholder = mode === 'image' 
-        ? 'Опишите сцену для генерации фото...' 
-        : 'Опишите сюжет и движение для видео...';
     }
 
     function selectStyle(el, style) {
@@ -119,7 +111,7 @@
     async function startGeneration() {
       const prompt = document.getElementById('promptInput').value.trim();
       if (!prompt) {
-        alert('Введите описание сцены!');
+        alert('Введите описание!');
         return;
       }
 
@@ -127,8 +119,8 @@
       const preview = document.getElementById('previewArea');
 
       btn.disabled = true;
-      btn.innerText = 'Нейросеть генерирует... Ждите';
-      preview.innerHTML = '<div class="preview-placeholder">Генерация в процессе (фото 3–8 сек, видео около 1 мин)...</div>';
+      btn.innerText = 'Создание... Подождите 3-7 сек';
+      preview.innerHTML = '<div class="preview-placeholder">Нейросеть рисует кадр...</div>';
 
       try {
         const response = await fetch('https://max-ai-backend-9qd1.onrender.com/api/generate', {
@@ -143,20 +135,23 @@
         });
 
         const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Ошибка сервера');
 
-        if (!response.ok) {
-          throw new Error(data.detail || 'Ошибка на стороне сервера');
-        }
-
-        if (data.type === 'image') {
-          preview.innerHTML = `<img src="${data.url}" alt="AI Photo" style="max-width:100%; max-height:100%; border-radius:10px;">`;
-        } else if (data.type === 'video') {
-          preview.innerHTML = `<video src="${data.url}" controls autoplay loop style="max-width:100%; max-height:100%; border-radius:10px;"></video>`;
-        }
+        // Создаем элемент картинки и ждем ее загрузки прямо в телефоне
+        const img = new Image();
+        img.src = data.url;
+        img.onload = () => {
+          preview.innerHTML = '';
+          preview.appendChild(img);
+          btn.disabled = false;
+          btn.innerText = '✨ Сгенерировать';
+        };
+        img.onerror = () => {
+          throw new Error('Шлюз генерации занят, нажмите еще раз');
+        };
 
       } catch (err) {
         preview.innerHTML = `<div class="preview-placeholder" style="color: #ef4444;">Ошибка: ${err.message}</div>`;
-      } finally {
         btn.disabled = false;
         btn.innerText = '✨ Сгенерировать';
       }
