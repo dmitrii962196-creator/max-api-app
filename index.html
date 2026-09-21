@@ -40,9 +40,9 @@
     .generate-btn:hover { background: var(--accent-hover); }
     .generate-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-    .preview-card { flex: 1; background: var(--card-bg); border: 1px dashed var(--border); border-radius: 14px; display: flex; align-items: center; justify-content: center; overflow: hidden; min-height: 250px; position: relative; }
+    .preview-card { flex: 1; background: var(--card-bg); border: 1px dashed var(--border); border-radius: 14px; display: flex; align-items: center; justify-content: center; overflow: hidden; min-height: 260px; position: relative; }
     .preview-placeholder { color: var(--text-muted); font-size: 13px; text-align: center; padding: 16px; }
-    .preview-card img { width: 100%; height: auto; max-height: 380px; object-fit: contain; border-radius: 10px; }
+    .preview-card img { width: 100%; height: auto; max-height: 420px; object-fit: contain; border-radius: 10px; }
   </style>
 </head>
 <body>
@@ -54,7 +54,7 @@
 
   <div class="input-group">
     <label>Промпт</label>
-    <textarea id="promptInput" placeholder="Опишите сцену..."></textarea>
+    <textarea id="promptInput" placeholder="Опишите сцену (например: енот в военной форме)..."></textarea>
   </div>
 
   <div class="input-group">
@@ -111,7 +111,7 @@
     async function startGeneration() {
       const prompt = document.getElementById('promptInput').value.trim();
       if (!prompt) {
-        alert('Введите описание сцены!');
+        alert('Введите описание!');
         return;
       }
 
@@ -119,8 +119,8 @@
       const preview = document.getElementById('previewArea');
 
       btn.disabled = true;
-      btn.innerText = 'Создание... Ждите';
-      preview.innerHTML = '<div class="preview-placeholder">Нейросеть рисует... (3-6 секунд)</div>';
+      btn.innerText = 'Нейросеть генерирует... Подождите';
+      preview.innerHTML = '<div class="preview-placeholder">Создание шедевра... (10–15 сек)</div>';
 
       try {
         const response = await fetch('https://max-ai-backend-9qd1.onrender.com/api/generate', {
@@ -137,11 +137,11 @@
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || 'Ошибка сервера');
 
-        // Вставляем картинку напрямую в DOM
-        preview.innerHTML = `<img src="${data.url}" alt="AI Result" onload="document.getElementById('genBtn').disabled = false; document.getElementById('genBtn').innerText = '✨ Сгенерировать';" onerror="document.getElementById('previewArea').innerHTML = '<div class=\\'preview-placeholder\\' style=\\'color:#ef4444;\\'>Ошибка загрузки, попробуйте еще раз</div>'; document.getElementById('genBtn').disabled = false; document.getElementById('genBtn').innerText = '✨ Сгенерировать';">`;
+        preview.innerHTML = `<img src="${data.url}" alt="AI Result">`;
 
       } catch (err) {
         preview.innerHTML = `<div class="preview-placeholder" style="color: #ef4444;">Ошибка: ${err.message}</div>`;
+      } finally {
         btn.disabled = false;
         btn.innerText = '✨ Сгенерировать';
       }
