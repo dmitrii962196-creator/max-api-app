@@ -350,11 +350,18 @@
       <div>Ваш арт появится здесь</div>
     </div>
   </div>
-
-  <script>
+<script>
     let mode = 'image';
     let currentStyle = 'Реализм';
     let currentRatio = '1:1';
+
+    const STYLE_PROMPTS = {
+      'Реализм': 'photorealistic photography, 8k resolution, raw photo, highly detailed, sharp focus, 35mm lens',
+      'Кино': 'cinematic movie still, dramatic atmosphere, 35mm film photography, masterpiece, deep lighting',
+      'Аниме': 'vibrant Japanese anime style illustration, Makoto Shinkai aesthetic, distinct colorful lines',
+      '3D': '3D digital render, Unreal Engine 5, Octane 3D render, smooth raytracing, 8k',
+      'GTA 5': 'Grand Theft Auto V loading screen concept art style, bold vector digital illustration, Rockstar Games'
+    };
 
     function switchMode(el, selectedMode) {
       mode = selectedMode;
@@ -373,10 +380,33 @@
       el.classList.add('active');
       currentRatio = ratioVal;
     }
-      
+
+    // Быстрый надежный перевод на клиенте
+    async function translatePrompt(text) {
+      let clean = text.toLowerCase();
+      ['сгенерируй', 'сгенирируй', 'создай', 'нарисуй', 'покажи'].forEach(w => {
+        clean = clean.replace(w, '');
+      });
+      clean = clean.trim();
+
+      let extra = '';
+      if (clean.includes('енот')) {
+        extra = 'genuine wild raccoon with black eye mask and striped tail';
+      }
+
+      try {
+        const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=${encodeURIComponent(clean)}`);
+        const data = await res.json();
+        const translated = data[0].map(s => s[0]).join('');
+        return extra ? `${translated}, ${extra}` : translated;
+      } catch (e) {
+        return extra ? `${clean}, ${extra}` : clean;
+      }
+    }
+
     async function runGeneration() {
-      const prompt = document.getElementById('promptInput').value.trim();
-      if (!prompt) {
+      const promptInput = document.getElementById('promptInput').value.trim();
+      if (!promptInput) {
         alert('Введите описание сцены!');
         return;
       }
@@ -392,77 +422,61 @@
         <div class="state-message">
           <div class="loader-ring"></div>
           <div style="color: #cbd5e1; font-weight: 500;">Нейросеть рисует кадр...</div>
-          <div style="font-size: 11.5px; color: var(--text-dim);">Обычно это занимает 6-12 секунд</div>
+          <div style="font-size: 11.5px; color: var(--text-dim);">Генерация займет около 5-8 секунд</div>
         </div>
       `;
 
       try {
-        const response = await fetch('https://max-ai-backend-9qd1.onrender.com/api/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            mode: mode, 
-            prompt: prompt, 
-            style: currentStyle, 
-            ratio: currentRatio 
-          })
-        });
+        // 1. Переводим промпт напрямую
+        const englishText = await translatePrompt(promptInput);
+        const styleText = STYLE_PROMPTS[currentStyle] || '';
+        const fullPrompt = encodeURIComponent(`${englishText}, ${styleText}`);
 
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.detail || 'Ошибка сервера');
+        // 2. Размеры
+        const sizes = {
+          '1:1': 'width=768&height=768',
+          '9:16': 'width=576&height=1024',
+          '16:9': 'width=1024&height=576'
+        };
+        const dim = sizes[currentRatio] || sizes['1:1'];
+        const seed = Math.floor(Math.random() * 9000000) + 1000000;
 
-        let attempts = 0;
-        const loadImage = (url) => {
-          const tempImg = new Image();
-          tempImg.crossOrigin = "anonymous";
-          tempImg.referrerPolicy = "no-referrer";
+        // 3. Формируем URL напрямую без посредников
+        const directUrl = `https://image.pollinations.ai/prompt/${fullPrompt}?${dim}&seed=${seed}&model=flux&nologo=true`;
 
-          const timeout = setTimeout(() => {
-            tempImg.src = "";
-            handleFail();
-          }, 18000);
+        // 4. Загружаем картинку
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
 
-          tempImg.onload = () => {
-            clearTimeout(timeout);
-            viewport.innerHTML = '';
-            tempImg.style.width = '100%';
-            tempImg.style.height = '100%';
-            tempImg.style.objectFit = 'contain';
-            tempImg.style.borderRadius = '18px';
-            viewport.appendChild(tempImg);
-            btn.disabled = false;
-            btnText.innerText = 'Сгенерировать шедевр';
-          };
-
-          const handleFail = () => {
-            clearTimeout(timeout);
-            attempts++;
-            if (attempts <= 2) {
-              const retrySeed = Math.floor(Math.random() * 1000000);
-              loadImage(url.replace(/seed=\d+/, `seed=${retrySeed}`));
-            } else {
-              viewport.innerHTML = `
-                <div class="state-message" style="color: #f87171;">
-                  <div style="font-size: 26px;">⚠️</div>
-                  <div style="font-size: 13px;">Шлюз перегружен, нажмите кнопку еще раз</div>
-                </div>
-              `;
-              btn.disabled = false;
-              btnText.innerText = 'Сгенерировать шедевр';
-            }
-          };
-
-          tempImg.onerror = handleFail;
-          tempImg.src = url;
+        img.onload = () => {
+          viewport.innerHTML = '';
+          img.style.width = '100%';
+          img.style.height = '100%';
+          img.style.objectFit = 'contain';
+          img.style.borderRadius = '18px';
+          viewport.appendChild(img);
+          btn.disabled = false;
+          btnText.innerText = 'Сгенерировать шедевр';
         };
 
-        loadImage(data.url);
+        img.onerror = () => {
+          viewport.innerHTML = `
+            <div class="state-message" style="color: #f87171;">
+              <div style="font-size: 26px;">⚠️</div>
+              <div style="font-size: 13px;">Шлюз перегружен, нажмите кнопку еще раз</div>
+            </div>
+          `;
+          btn.disabled = false;
+          btnText.innerText = 'Сгенерировать шедевр';
+        };
+
+        img.src = directUrl;
 
       } catch (err) {
         viewport.innerHTML = `
           <div class="state-message" style="color: #f87171;">
             <div style="font-size: 26px;">⚠️</div>
-            <div style="font-size: 13px;">${err.message}</div>
+            <div style="font-size: 13px;">Ошибка: ${err.message}</div>
           </div>
         `;
         btn.disabled = false;
@@ -470,5 +484,6 @@
       }
     }
   </script>
+  
 </body>
 </html>
