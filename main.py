@@ -2,7 +2,7 @@ import os
 import time
 import random
 import urllib.parse
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import requests
@@ -25,25 +25,22 @@ class GenerateRequest(BaseModel):
 
 STYLE_MODIFIERS = {
     "Реализм": "award-winning wildlife photography, photorealistic, 8k resolution, raw photo, highly detailed fur, crisp focus, studio lighting",
-    "Кино": "cinematic movie still, 35mm film photography, dramatic atmospheric lighting, shallow depth of field, detailed fur texture",
-    "Аниме": "vibrant Japanese anime style illustration, Makoto Shinkai aesthetic, distinct colorful lines, rich background",
+    "Кино": "cinematic movie still, 35mm film photography, dramatic atmospheric lighting, shallow depth of field",
+    "Аниме": "vibrant Japanese anime style illustration, Makoto Shinkai aesthetic, distinct colorful lines",
     "3D": "3D digital render, Pixar and Unreal Engine 5 style, Octane 3D render, smooth cute 3D character",
     "GTA 5": "Grand Theft Auto V loading screen concept art style, bold vector digital illustration, Rockstar Games"
 }
 
 def enhance_and_translate(text: str, api_key: str | None) -> str:
-    # Очистка вводных слов
     clean = text.lower()
     for w in ["сгенерируй", "сгенирируй", "создай", "нарисуй", "покажи"]:
         clean = clean.replace(w, "")
     clean = clean.strip()
 
-    # Если в запросе упомянут енот — жестко прописываем ключевые видовые признаки, чтобы не было путаницы с котом
     extra_details = ""
     if any(k in clean for k in ["енот", "енота", "енотик"]):
-        extra_details = "a genuine wild raccoon, Procyon lotor, black eye mask markings, ringed striped tail, raccoon whiskers"
+        extra_details = "a genuine wild raccoon, Procyon lotor, black eye mask markings, ringed striped tail"
 
-    # Перевод через модель APImira
     translated = ""
     if api_key:
         try:
@@ -57,7 +54,7 @@ def enhance_and_translate(text: str, api_key: str | None) -> str:
                 "messages": [
                     {
                         "role": "system",
-                        "content": "Translate Russian query into a vivid English subject description. Output ONLY the English subject words, no extra commentary."
+                        "content": "Translate Russian query into an English subject description. Output ONLY the English words."
                     },
                     {"role": "user", "content": clean}
                 ],
@@ -65,12 +62,10 @@ def enhance_and_translate(text: str, api_key: str | None) -> str:
             }
             r = requests.post(url, headers=headers, json=payload, timeout=5)
             if r.status_code == 200:
-                translated = r.json()["choices"][0]["message"]["content"].strip()
-                translated = translated.replace('"', '').replace("'", "")
+                translated = r.json()["choices"][0]["message"]["content"].strip().replace('"', '').replace("'", "")
         except Exception:
             pass
 
-    # Резервный перевод Google
     if not translated:
         try:
             url = "https://translate.googleapis.com/translate_a/single"
@@ -80,7 +75,6 @@ def enhance_and_translate(text: str, api_key: str | None) -> str:
         except Exception:
             translated = clean
 
-    # Собираем промпт с анатомическими уточнениями
     if extra_details:
         return f"{translated}, {extra_details}"
     return translated
@@ -89,41 +83,30 @@ def enhance_and_translate(text: str, api_key: str | None) -> str:
 def health_check():
     return {"status": "ok"}
 
-@app.get("/api/image-proxy")
-def image_proxy(prompt: str, style: str = "Реализм", ratio: str = "1:1"):
-    api_key = os.getenv("APIMIRA_KEY")
-
-    # Формируем точный детальный промпт
-    english_subject = enhance_and_translate(prompt, api_key)
-    style_suffix = STYLE_MODIFIERS.get(style, "")
-    full_prompt = f"{english_subject}, {style_suffix}".strip(", ")
-    encoded_prompt = urllib.parse.quote(full_prompt)
-
-    dimensions = {
-        "1:1": (768, 768),
-        "9:16": (576, 1024),
-        "16:9": (1024, 576)
-    }
-    w, h = dimensions.get(ratio, (768, 768))
-    seed = random.randint(100000, 9999999)
-
-    # Генерация через Flux
-    source_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={w}&height={h}&model=flux&seed={seed}&nologo=true"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-    }
-
-    resp = requests.get(source_url, headers=headers, timeout=40)
-    if resp.status_code != 200:
-        raise HTTPException(status_code=500, detail="Ошибка генерации изображения")
-
-    return Response(content=resp.content, media_type="image/jpeg")
-
 @app.post("/api/generate")
 def generate_media(req: GenerateRequest):
-    encoded_prompt = urllib.parse.quote(req.prompt)
-    encoded_style = urllib.parse.quote(req.style)
-    encoded_ratio = urllib.parse.quote(req.ratio)
+    api_key = os.getenv("APIMIRA_KEY")
 
-    internal_url = f"https://max-ai-backend-9qd1.onrender.com/api/image-proxy?prompt={encoded_prompt}&style={encoded_style}&ratio={encoded_ratio}&t={int(time.time())}"
-    return {"type": "image", "url": internal_url}
+    try:
+        # 1. Формируем подробный английский промпт
+        english_subject = enhance_and_translate(req.prompt, api_key)
+        style_suffix = STYLE_MODIFIERS.get(req.style, "")
+        full_prompt = f"{english_subject}, {style_suffix}".strip(", ")
+        encoded_prompt = urllib.parse.quote(full_prompt)
+
+        # 2. Размеры кадра
+        dimensions = {
+            "1:1": (768, 768),
+            "9:16": (576, 1024),
+            "16:9": (1024, 576)
+        }
+        w, h = dimensions.get(req.ratio, (768, 768))
+        seed = random.randint(100000, 9999999)
+
+        # 3. Прямой CDN с мгновенной отдачей и обходом кэша
+        direct_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={w}&height={h}&seed={seed}&model=flux&nologo=true"
+
+        return {"type": "image", "url": direct_url}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
