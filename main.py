@@ -1,5 +1,4 @@
 import os
-import time
 import random
 import urllib.parse
 from fastapi import FastAPI, HTTPException
@@ -24,10 +23,10 @@ class GenerateRequest(BaseModel):
     ratio: str
 
 STYLE_MODIFIERS = {
-    "Реализм": "award-winning wildlife photography, photorealistic, 8k resolution, raw photo, highly detailed fur, crisp focus, studio lighting",
+    "Реализм": "photorealistic photography, 8k resolution, raw photo, highly detailed, sharp focus, 35mm lens",
     "Кино": "cinematic movie still, 35mm film photography, dramatic atmospheric lighting, shallow depth of field",
     "Аниме": "vibrant Japanese anime style illustration, Makoto Shinkai aesthetic, distinct colorful lines",
-    "3D": "3D digital render, Pixar and Unreal Engine 5 style, Octane 3D render, smooth cute 3D character",
+    "3D": "3D digital render, Unreal Engine 5 style, Octane 3D render, smooth raytracing, 8k",
     "GTA 5": "Grand Theft Auto V loading screen concept art style, bold vector digital illustration, Rockstar Games"
 }
 
@@ -37,6 +36,7 @@ def enhance_and_translate(text: str, api_key: str | None) -> str:
         clean = clean.replace(w, "")
     clean = clean.strip()
 
+    # Специфические ключевые маркеры для частых животных/объектов
     extra_details = ""
     if any(k in clean for k in ["енот", "енота", "енотик"]):
         extra_details = "a genuine wild raccoon, Procyon lotor, black eye mask markings, ringed striped tail"
@@ -54,11 +54,11 @@ def enhance_and_translate(text: str, api_key: str | None) -> str:
                 "messages": [
                     {
                         "role": "system",
-                        "content": "Translate Russian query into an English subject description. Output ONLY the English words."
+                        "content": "Translate the user query into a descriptive English image prompt. Output ONLY the English words, no extra text."
                     },
                     {"role": "user", "content": clean}
                 ],
-                "max_tokens": 50
+                "max_tokens": 60
             }
             r = requests.post(url, headers=headers, json=payload, timeout=5)
             if r.status_code == 200:
@@ -88,13 +88,11 @@ def generate_media(req: GenerateRequest):
     api_key = os.getenv("APIMIRA_KEY")
 
     try:
-        # 1. Формируем подробный английский промпт
         english_subject = enhance_and_translate(req.prompt, api_key)
         style_suffix = STYLE_MODIFIERS.get(req.style, "")
         full_prompt = f"{english_subject}, {style_suffix}".strip(", ")
         encoded_prompt = urllib.parse.quote(full_prompt)
 
-        # 2. Размеры кадра
         dimensions = {
             "1:1": (768, 768),
             "9:16": (576, 1024),
@@ -103,8 +101,9 @@ def generate_media(req: GenerateRequest):
         w, h = dimensions.get(req.ratio, (768, 768))
         seed = random.randint(100000, 9999999)
 
-        # 3. Прямой CDN с мгновенной отдачей и обходом кэша
-        direct_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={w}&height={h}&seed={seed}&model=flux&nologo=true"
+        # Выбираем случайное зеркало кластера, чтобы не ловить лимиты очередей
+        cluster_node = random.choice(["image.pollinations.ai", "gen.pollinations.ai"])
+        direct_url = f"https://{cluster_node}/prompt/{encoded_prompt}?width={w}&height={h}&seed={seed}&model=flux&nologo=true"
 
         return {"type": "image", "url": direct_url}
 
