@@ -1,5 +1,4 @@
 import os
-import urllib.parse
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -39,18 +38,21 @@ def generate_media(req: GenerateRequest):
     if not api_key:
         raise HTTPException(status_code=500, detail="APIMIRA_KEY не настроен на Render")
 
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
     try:
-        # 1. Очищаем вводные команды
+        # 1. Формируем промпт
         raw_text = req.prompt.lower()
         for word in ["сгенерируй", "сгенирируй", "создай", "нарисуй", "покажи"]:
             raw_text = raw_text.replace(word, "")
         raw_text = raw_text.strip()
 
-        # 2. Добавляем выбранный стиль
         style_suffix = STYLE_MODIFIERS.get(req.style, "")
         final_prompt = f"{raw_text}, {style_suffix}".strip(", ")
 
-        # 3. Размеры кадра
         dimensions = {
             "1:1": "1024x1024",
             "9:16": "1024x1792",
@@ -58,28 +60,36 @@ def generate_media(req: GenerateRequest):
         }
         size = dimensions.get(req.ratio, "1024x1024")
 
-        # 4. Точный официальный URL APImira (apimira.com/v1)
-        url = "https://apimira.com/v1/images/generations"
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "model": "dall-e-3",
-            "prompt": final_prompt,
-            "size": size,
-            "n": 1
-        }
+        # 2. Список наиболее вероятных названий моделей для изображений в APImira
+        candidates = [
+            "openai/dall-e-3",
+            "black-forest-labs/flux-1-schnell",
+            "black-forest-labs/flux-1-dev",
+            "stabilityai/stable-diffusion-xl-base-1.0",
+            "dall-e-3"
+        ]
 
-        resp = requests.post(url, headers=headers, json=payload, timeout=60)
-        
-        if resp.status_code != 200:
-            raise Exception(f"APImira ({resp.status_code}): {resp.text}")
+        # 3. Делаем попытку отправки запроса
+        last_error = ""
+        for model_name in candidates:
+            url = "https://apimira.com/v1/images/generations"
+            payload = {
+                "model": model_name,
+                "prompt": final_prompt,
+                "size": size,
+                "n": 1
+            }
 
-        data = resp.json()
-        image_url = data["data"][0]["url"]
+            resp = requests.post(url, headers=headers, json=payload, timeout=60)
+            if resp.status_code == 200:
+                data = resp.json()
+                image_url = data["data"][0].get("url") or data["data"][0].get("b64_json")
+                return {"type": "image", "url": image_url}
+            else:
+                last_error = f"{model_name}: {resp.text}"
 
-        return {"type": "image", "url": image_url}
+        # Если ни одна стандартная модель не подошла, выводим ответ сервиса
+        raise Exception(f"Доступные модели отклонили запрос: {last_error}")
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
