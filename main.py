@@ -2,7 +2,7 @@ import os
 import time
 import random
 import urllib.parse
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import requests
@@ -32,7 +32,7 @@ STYLE_MODIFIERS = {
 }
 
 def translate_to_en(text: str, api_key: str | None) -> str:
-    # 1. Точный перевод через вашу подключенную модель APImira
+    # 1. Перевод через APImira
     if api_key:
         try:
             url = "https://apimira.com/v1/chat/completions"
@@ -59,7 +59,7 @@ def translate_to_en(text: str, api_key: str | None) -> str:
         except Exception:
             pass
 
-    # 2. Быстрый резервный перевод через Google
+    # 2. Резервный перевод Google
     try:
         url = "https://translate.googleapis.com/translate_a/single"
         params = {"client": "gtx", "sl": "auto", "tl": "en", "dt": "t", "q": text}
@@ -76,44 +76,49 @@ def translate_to_en(text: str, api_key: str | None) -> str:
 def health_check():
     return {"status": "ok"}
 
-@app.post("/api/generate")
-def generate_media(req: GenerateRequest):
+# Эндпоинт прямого проксирования изображения
+@app.get("/api/image-proxy")
+def image_proxy(prompt: str, style: str = "Реализм", ratio: str = "1:1"):
     api_key = os.getenv("APIMIRA_KEY")
 
-    try:
-        # 1. Очистка слов-паразитов
-        clean_text = req.prompt.lower()
-        for w in ["сгенерируй", "сгенирируй", "создай", "нарисуй", "покажи"]:
-            clean_text = clean_text.replace(w, "")
-        clean_text = clean_text.strip()
+    # Очистка
+    clean_text = prompt.lower()
+    for w in ["сгенерируй", "сгенирируй", "создай", "нарисуй", "покажи"]:
+        clean_text = clean_text.replace(w, "")
+    clean_text = clean_text.strip()
 
-        # 2. Получаем английский текст (например: "raccoon in military uniform")
-        english_prompt = translate_to_en(clean_text, api_key)
-        
-        # 3. Соединяем со стилем
-        style_suffix = STYLE_MODIFIERS.get(req.style, "")
-        full_prompt = f"{english_prompt}, {style_suffix}".strip(", ")
-        encoded_prompt = urllib.parse.quote(full_prompt)
+    english_prompt = translate_to_en(clean_text, api_key)
+    style_suffix = STYLE_MODIFIERS.get(style, "")
+    full_prompt = f"a detailed photo of {english_prompt}, {style_suffix}".strip(", ")
+    encoded_prompt = urllib.parse.quote(full_prompt)
 
-        # 4. Размеры
-        dimensions = {
-            "1:1": (768, 768),
-            "9:16": (576, 1024),
-            "16:9": (1024, 576)
-        }
-        w, h = dimensions.get(req.ratio, (768, 768))
+    dimensions = {
+        "1:1": (768, 768),
+        "9:16": (576, 1024),
+        "16:9": (1024, 576)
+    }
+    w, h = dimensions.get(ratio, (768, 768))
+    seed = random.randint(100000, 9999999)
 
-        # 5. Уникальный seed и временная метка для полного сброса кэша
-        seed = random.randint(100000, 9999999)
-        timestamp = int(time.time())
+    # Сервер сам скачивает сгенерированную картинку
+    source_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={w}&height={h}&model=flux&seed={seed}&nologo=true"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    }
+    img_resp = requests.get(source_url, headers=headers, timeout=40)
 
-        # Чистый endpoint Flux с отключением кэша и дефолтных заглушек
-        image_url = (
-            f"https://image.pollinations.ai/prompt/{encoded_prompt}"
-            f"?width={w}&height={h}&model=flux&seed={seed}&nologo=true&cache=false&t={timestamp}"
-        )
+    if img_resp.status_code != 200:
+        raise HTTPException(status_code=500, detail="Ошибка загрузки изображения")
 
-        return {"type": "image", "url": image_url}
+    # Отдаем байты картинки напрямую клиенту под видом локального файла
+    return Response(content=img_resp.content, media_type="image/jpeg")
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
+@app.post("/api/generate")
+def generate_media(req: GenerateRequest):
+    encoded_prompt = urllib.parse.quote(req.prompt)
+    encoded_style = urllib.parse.quote(req.style)
+    encoded_ratio = urllib.parse.quote(req.ratio)
+    
+    # Возвращаем ссылку на наш собственный бэкенд на Render!
+    internal_url = f"https://max-ai-backend-9qd1.onrender.com/api/image-proxy?prompt={encoded_prompt}&style={encoded_style}&ratio={encoded_ratio}&t={int(time.time())}"
+    return {"type": "image", "url": internal_url}
