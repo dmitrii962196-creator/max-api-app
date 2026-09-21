@@ -1,4 +1,4 @@
-import random
+import os
 import urllib.parse
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,23 +22,12 @@ class GenerateRequest(BaseModel):
     ratio: str
 
 STYLE_MODIFIERS = {
-    "Реализм": "photorealistic photography, 8k, highly detailed, realistic lighting",
-    "Кино": "cinematic lighting, 35mm film photography, masterpiece, movie still",
-    "Аниме": "anime illustration, Makoto Shinkai style, vibrant colors",
-    "3D": "3D render, Octane render, Unreal Engine 5, ultra-detailed textures",
-    "GTA 5": "Grand Theft Auto V art style, loading screen illustration"
+    "Реализм": "фотореализм, высокое разрешение, 8k, детальная текстура, реалистичное освещение",
+    "Кино": "кадр из фильма, кинематографичное освещение, 35мм, атмосферный шедевр",
+    "Аниме": "аниме стиль, яркие цвета, стилистика Макото Синкая, детальный арт",
+    "3D": "3D рендер, Unreal Engine 5, Octane render, объемное освещение",
+    "GTA 5": "стиль загрузочного экрана GTA V, цифровая иллюстрация Rockstar Games"
 }
-
-def translate_to_en(text: str) -> str:
-    """Безотказный перевод запроса через Google"""
-    try:
-        url = "https://translate.googleapis.com/translate_a/single"
-        params = {"client": "gtx", "sl": "auto", "tl": "en", "dt": "t", "q": text}
-        res = requests.get(url, params=params, timeout=4).json()
-        translated = "".join([sentence[0] for sentence in res[0] if sentence[0]])
-        return translated if translated else text
-    except Exception:
-        return text
 
 @app.get("/")
 def health_check():
@@ -46,35 +35,49 @@ def health_check():
 
 @app.post("/api/generate")
 def generate_media(req: GenerateRequest):
+    api_key = os.getenv("APIMIRA_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="APIMIRA_KEY не настроен на Render")
+
     try:
         # 1. Очищаем вводные слова
-        clean_text = req.prompt.lower()
+        raw_text = req.prompt.lower()
         for word in ["сгенерируй", "сгенирируй", "создай", "нарисуй", "покажи"]:
-            clean_text = clean_text.replace(word, "")
-        clean_text = clean_text.strip()
+            raw_text = raw_text.replace(word, "")
+        raw_text = raw_text.strip()
 
-        # 2. Переводим на английский
-        english_prompt = translate_to_en(clean_text)
-
-        # 3. Соединяем со стилем
+        # 2. Добавляем визуальный стиль (APImira отлично понимает русский язык)
         style_suffix = STYLE_MODIFIERS.get(req.style, "")
-        final_prompt = f"{english_prompt}, {style_suffix}".strip(", ")
-        encoded_prompt = urllib.parse.quote(final_prompt)
+        final_prompt = f"{raw_text}, {style_suffix}".strip(", ")
 
-        # 4. Размеры кадра
+        # 3. Размеры кадра
         dimensions = {
-            "1:1": (768, 768),
-            "9:16": (576, 1024),
-            "16:9": (1024, 576)
+            "1:1": "1024x1024",
+            "9:16": "1024x1792",
+            "16:9": "1792x1024"
         }
-        width, height = dimensions.get(req.ratio, (768, 768))
-        seed = random.randint(1000, 999999)
+        size = dimensions.get(req.ratio, "1024x1024")
 
-        # 5. Новый актуальный и стабильный endpoint gen.pollinations.ai
-        image_url = (
-            f"https://gen.pollinations.ai/image/{encoded_prompt}"
-            f"?width={width}&height={height}&seed={seed}&nologo=true"
-        )
+        # 4. Запрос к APImira
+        url = "https://api.apimira.ru/v1/images/generations"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": "dall-e-3",
+            "prompt": final_prompt,
+            "size": size,
+            "n": 1
+        }
+
+        resp = requests.post(url, headers=headers, json=payload, timeout=60)
+        
+        if resp.status_code != 200:
+            raise Exception(f"APImira ({resp.status_code}): {resp.text}")
+
+        data = resp.json()
+        image_url = data["data"][0]["url"]
 
         return {"type": "image", "url": image_url}
 
