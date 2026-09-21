@@ -22,26 +22,20 @@ class GenerateRequest(BaseModel):
     ratio: str
 
 STYLE_MODIFIERS = {
-    "Реализм": "hyperrealistic photography, 8k, raw photo, detailed, photorealistic",
-    "Кино": "cinematic lighting, dramatic atmosphere, cinematic shot, movie still",
-    "Аниме": "anime style art, vibrant colors, detailed line art, Makoto Shinkai aesthetic",
-    "3D": "3D digital render, Unreal Engine 5, Octane 3D, detailed textures",
-    "GTA 5": "Grand Theft Auto V art style, loading screen illustration, Rockstar Games art"
+    "Реализм": "photorealistic photography, 8k, highly detailed, realistic lighting",
+    "Кино": "cinematic lighting, 35mm film photography, masterpiece, movie still",
+    "Аниме": "anime illustration, Makoto Shinkai style, vibrant colors",
+    "3D": "3D render, Octane render, Unreal Engine 5, ultra-detailed textures",
+    "GTA 5": "Grand Theft Auto V art style, loading screen illustration"
 }
 
 def translate_to_en(text: str) -> str:
-    """Перевод через Google Translate с очисткой ответа"""
+    """Безотказный перевод запроса через Google"""
     try:
         url = "https://translate.googleapis.com/translate_a/single"
-        params = {
-            "client": "gtx",
-            "sl": "ru",
-            "tl": "en",
-            "dt": "t",
-            "q": text
-        }
+        params = {"client": "gtx", "sl": "auto", "tl": "en", "dt": "t", "q": text}
         res = requests.get(url, params=params, timeout=4).json()
-        translated = "".join([s[0] for s in res[0] if s[0]])
+        translated = "".join([sentence[0] for sentence in res[0] if sentence[0]])
         return translated if translated else text
     except Exception:
         return text
@@ -53,21 +47,21 @@ def health_check():
 @app.post("/api/generate")
 def generate_media(req: GenerateRequest):
     try:
-        raw_text = req.prompt.lower()
+        # 1. Очищаем вводные слова
+        clean_text = req.prompt.lower()
         for word in ["сгенерируй", "сгенирируй", "создай", "нарисуй", "покажи"]:
-            raw_text = raw_text.replace(word, "")
-        raw_text = raw_text.strip()
+            clean_text = clean_text.replace(word, "")
+        clean_text = clean_text.strip()
 
-        # 1. Переводим русский текст на английский
-        english_prompt = translate_to_en(raw_text)
+        # 2. Переводим на английский
+        english_prompt = translate_to_en(clean_text)
 
-        # 2. Соединяем со стилем
+        # 3. Соединяем со стилем
         style_suffix = STYLE_MODIFIERS.get(req.style, "")
-        full_prompt = f"{english_prompt}, {style_suffix}".strip(", ")
+        final_prompt = f"{english_prompt}, {style_suffix}".strip(", ")
+        encoded_prompt = urllib.parse.quote(final_prompt)
 
-        # 3. Экранируем пробелы и спецсимволы
-        encoded_prompt = urllib.parse.quote(full_prompt)
-
+        # 4. Размеры кадра
         dimensions = {
             "1:1": (768, 768),
             "9:16": (576, 1024),
@@ -76,17 +70,13 @@ def generate_media(req: GenerateRequest):
         width, height = dimensions.get(req.ratio, (768, 768))
         seed = random.randint(1000, 999999)
 
-        # 4. Формируем URL без лишних параметров, с жестко заданной моделью flux
+        # 5. Новый актуальный и стабильный endpoint gen.pollinations.ai
         image_url = (
-            f"https://image.pollinations.ai/prompt/{encoded_prompt}"
-            f"?width={width}&height={height}&model=flux&seed={seed}&nologo=true&enhance=false"
+            f"https://gen.pollinations.ai/image/{encoded_prompt}"
+            f"?width={width}&height={height}&seed={seed}&nologo=true"
         )
 
-        return {
-            "type": "image", 
-            "url": image_url,
-            "translated": english_prompt
-        }
+        return {"type": "image", "url": image_url}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
