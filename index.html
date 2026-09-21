@@ -18,42 +18,36 @@
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     body { background-color: var(--bg); color: var(--text); padding: 16px; min-height: 100vh; display: flex; flex-direction: column; gap: 14px; }
 
-    /* Табы Фото / Видео */
     .tabs { display: flex; background: var(--card-bg); border-radius: 12px; padding: 4px; border: 1px solid var(--border); }
     .tab-btn { flex: 1; padding: 10px; border: none; background: transparent; color: var(--text-muted); font-size: 14px; font-weight: 600; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
     .tab-btn.active { background: var(--accent); color: #fff; }
 
-    /* Поле ввода */
     .input-group { display: flex; flex-direction: column; gap: 6px; }
     label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 600; }
     textarea { width: 100%; height: 90px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); padding: 10px; font-size: 14px; resize: none; outline: none; }
     textarea:focus { border-color: var(--accent); }
 
-    /* Чипы стилей */
     .chips-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
     .chips-row::-webkit-scrollbar { display: none; }
     .chip { background: var(--card-bg); border: 1px solid var(--border); color: var(--text-muted); padding: 6px 12px; border-radius: 20px; font-size: 12px; white-space: nowrap; cursor: pointer; }
     .chip.active { background: rgba(99, 102, 241, 0.15); border-color: var(--accent); color: #fff; }
 
-    /* Формат соотношения сторон */
     .ratio-group { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
     .ratio-btn { background: var(--card-bg); border: 1px solid var(--border); color: var(--text-muted); padding: 8px; border-radius: 8px; font-size: 12px; cursor: pointer; text-align: center; }
     .ratio-btn.active { border-color: var(--accent); color: #fff; font-weight: 600; }
 
-    /* Кнопка генерации */
     .generate-btn { margin-top: 6px; padding: 14px; background: var(--accent); border: none; border-radius: 12px; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; transition: background 0.2s; display: flex; justify-content: center; align-items: center; gap: 8px; }
     .generate-btn:hover { background: var(--accent-hover); }
     .generate-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-    /* Окно предпросмотра */
-    .preview-card { flex: 1; background: var(--card-bg); border: 1px dashed var(--border); border-radius: 14px; display: flex; align-items: center; justify-content: center; overflow: hidden; min-height: 220px; position: relative; }
+    .preview-card { flex: 1; background: var(--card-bg); border: 1px dashed var(--border); border-radius: 14px; display: flex; align-items: center; justify-content: center; overflow: hidden; min-height: 240px; position: relative; }
     .preview-placeholder { color: var(--text-muted); font-size: 13px; text-align: center; padding: 16px; }
     .preview-card img, .preview-card video { width: 100%; height: 100%; object-fit: contain; }
   </style>
 </head>
 <body>
 
-  <!-- Выбор режима -->
+  <!-- Вкладки Фото / Видео -->
   <div class="tabs">
     <button class="tab-btn active" onclick="setMode('image')">Фото</button>
     <button class="tab-btn" onclick="setMode('video')">Видео</button>
@@ -62,7 +56,7 @@
   <!-- Описание -->
   <div class="input-group">
     <label>Промпт</label>
-    <textarea id="promptInput" placeholder="Опишите сцену (например: неоновый киберпанк город под дождём)..."></textarea>
+    <textarea id="promptInput" placeholder="Опишите сцену для генерации..."></textarea>
   </div>
 
   <!-- Стили -->
@@ -70,10 +64,10 @@
     <label>Стиль</label>
     <div class="chips-row" id="styleChips">
       <div class="chip active" onclick="selectStyle(this, 'Реализм')">Реализм</div>
-      <div class="chip" onclick="selectStyle(this, 'Кинематографичный')">Кино</div>
+      <div class="chip" onclick="selectStyle(this, 'Кино')">Кино</div>
       <div class="chip" onclick="selectStyle(this, 'Аниме')">Аниме</div>
-      <div class="chip" onclick="selectStyle(this, '3D Рендер')">3D</div>
-      <div class="chip" onclick="selectStyle(this, 'GTA V Style')">GTA 5</div>
+      <div class="chip" onclick="selectStyle(this, '3D')">3D</div>
+      <div class="chip" onclick="selectStyle(this, 'GTA 5')">GTA 5</div>
     </div>
   </div>
 
@@ -81,9 +75,9 @@
   <div class="input-group">
     <label>Формат</label>
     <div class="ratio-group" id="ratioGroup">
-      <div class="ratio-btn active" onclick="selectRatio(this, '1:1')">1:1 (Квадрат)</div>
-      <div class="ratio-btn" onclick="selectRatio(this, '9:16')">9:16 (Stories)</div>
-      <div class="ratio-btn" onclick="selectRatio(this, '16:9')">16:9 (Широкий)</div>
+      <div class="ratio-btn active" onclick="selectRatio(this, '1:1')">1:1</div>
+      <div class="ratio-btn" onclick="selectRatio(this, '9:16')">9:16</div>
+      <div class="ratio-btn" onclick="selectRatio(this, '16:9')">16:9</div>
     </div>
   </div>
 
@@ -107,7 +101,7 @@
       event.target.classList.add('active');
       document.getElementById('promptInput').placeholder = mode === 'image' 
         ? 'Опишите сцену для генерации фото...' 
-        : 'Опишите динамику и сюжет для короткого видео...';
+        : 'Опишите сюжет и движение для видео...';
     }
 
     function selectStyle(el, style) {
@@ -125,7 +119,7 @@
     async function startGeneration() {
       const prompt = document.getElementById('promptInput').value.trim();
       if (!prompt) {
-        alert('Введите описание сцены');
+        alert('Введите описание сцены!');
         return;
       }
 
@@ -133,31 +127,36 @@
       const preview = document.getElementById('previewArea');
 
       btn.disabled = true;
-      btn.innerText = 'Генерация... Пожалуйста, подождите';
-      preview.innerHTML = '<div class="preview-placeholder">Нейросеть генерирует медиа...</div>';
+      btn.innerText = 'Нейросеть генерирует... Ждите';
+      preview.innerHTML = '<div class="preview-placeholder">Генерация в процессе (фото 3–8 сек, видео около 1 мин)...</div>';
 
       try {
-        // Здесь подключается ваш сервер бэкенда (например, FastAPI / Node.js)
-        // const response = await fetch('https://your-server.com/api/generate', {
-        //   method: 'POST',
-        //   headers: { 'Content-Type': 'application/json' },
-        //   body: JSON.stringify({ mode: currentMode, prompt, style: selectedStyle, ratio: selectedRatio })
-        // });
-        // const data = await response.json();
+        const response = await fetch('https://max-ai-backend-9qd1.onrender.com/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            mode: currentMode, 
+            prompt: prompt, 
+            style: selectedStyle, 
+            ratio: selectedRatio 
+          })
+        });
 
-        // Имитация ответа
-        setTimeout(() => {
-          if (currentMode === 'image') {
-            preview.innerHTML = `<img src="https://picsum.photos/600/600" alt="Generated visual">`;
-          } else {
-            preview.innerHTML = `<div class="preview-placeholder">Видео готово! Передано в чат-бот.</div>`;
-          }
-          btn.disabled = false;
-          btn.innerText = '✨ Сгенерировать';
-        }, 2000);
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.detail || 'Ошибка на стороне сервера');
+        }
+
+        if (data.type === 'image') {
+          preview.innerHTML = `<img src="${data.url}" alt="AI Photo" style="max-width:100%; max-height:100%; border-radius:10px;">`;
+        } else if (data.type === 'video') {
+          preview.innerHTML = `<video src="${data.url}" controls autoplay loop style="max-width:100%; max-height:100%; border-radius:10px;"></video>`;
+        }
 
       } catch (err) {
-        preview.innerHTML = '<div class="preview-placeholder" style="color: #ef4444;">Ошибка генерации</div>';
+        preview.innerHTML = `<div class="preview-placeholder" style="color: #ef4444;">Ошибка: ${err.message}</div>`;
+      } finally {
         btn.disabled = false;
         btn.innerText = '✨ Сгенерировать';
       }
