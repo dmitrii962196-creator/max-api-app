@@ -350,17 +350,18 @@
       <div>Ваш арт появится здесь</div>
     </div>
   </div>
-<script>
+
+  <script>
     let mode = 'image';
     let currentStyle = 'Реализм';
     let currentRatio = '1:1';
 
     const STYLE_PROMPTS = {
-      'Реализм': 'photorealistic photography, 8k resolution, raw photo, highly detailed, sharp focus, 35mm lens',
-      'Кино': 'cinematic movie still, dramatic atmosphere, 35mm film photography, masterpiece, deep lighting',
-      'Аниме': 'vibrant Japanese anime style illustration, Makoto Shinkai aesthetic, distinct colorful lines',
-      '3D': '3D digital render, Unreal Engine 5, Octane 3D render, smooth raytracing, 8k',
-      'GTA 5': 'Grand Theft Auto V loading screen concept art style, bold vector digital illustration, Rockstar Games'
+      'Реализм': 'hyperrealistic photograph, 8k, raw photo, sharp focus, masterpiece',
+      'Кино': 'cinematic frame, dramatic movie lighting, 35mm film still, masterpiece',
+      'Аниме': 'anime art, Makoto Shinkai style, vivid colors, crisp lines',
+      '3D': '3D render, Pixar style, Unreal Engine 5, smooth textures',
+      'GTA 5': 'GTA 5 loading screen style art, Rockstar video game digital art'
     };
 
     function switchMode(el, selectedMode) {
@@ -381,7 +382,6 @@
       currentRatio = ratioVal;
     }
 
-    // Быстрый надежный перевод на клиенте
     async function translatePrompt(text) {
       let clean = text.toLowerCase();
       ['сгенерируй', 'сгенирируй', 'создай', 'нарисуй', 'покажи'].forEach(w => {
@@ -391,7 +391,7 @@
 
       let extra = '';
       if (clean.includes('енот')) {
-        extra = 'genuine wild raccoon with black eye mask and striped tail';
+        extra = 'raccoon, black eye mask, striped bushy tail';
       }
 
       try {
@@ -422,17 +422,15 @@
         <div class="state-message">
           <div class="loader-ring"></div>
           <div style="color: #cbd5e1; font-weight: 500;">Нейросеть рисует кадр...</div>
-          <div style="font-size: 11.5px; color: var(--text-dim);">Генерация займет около 5-8 секунд</div>
+          <div style="font-size: 11.5px; color: var(--text-dim);">Загрузка займет около 4-8 секунд</div>
         </div>
       `;
 
       try {
-        // 1. Переводим промпт напрямую
         const englishText = await translatePrompt(promptInput);
         const styleText = STYLE_PROMPTS[currentStyle] || '';
-        const fullPrompt = encodeURIComponent(`${englishText}, ${styleText}`);
+        const fullPrompt = encodeURIComponent(`a photo of ${englishText}, ${styleText}`);
 
-        // 2. Размеры
         const sizes = {
           '1:1': 'width=768&height=768',
           '9:16': 'width=576&height=1024',
@@ -441,49 +439,30 @@
         const dim = sizes[currentRatio] || sizes['1:1'];
         const seed = Math.floor(Math.random() * 9000000) + 1000000;
 
-        // 3. Формируем URL напрямую без посредников
-        const directUrl = `https://image.pollinations.ai/prompt/${fullPrompt}?${dim}&seed=${seed}&model=flux&nologo=true`;
+        // Скоростной Turbo-эндпоинт (SDXL Lightning)
+        const targetUrl = `https://image.pollinations.ai/prompt/${fullPrompt}?${dim}&seed=${seed}&model=turbo&nologo=true`;
 
-        // 4. Загружаем картинку
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
+        // Скачиваем как бинарный Blob, чтобы обойти блокировки WebView
+        const res = await fetch(targetUrl, { referrerPolicy: 'no-referrer' });
+        if (!res.ok) throw new Error('Ошибка генерации шлюза');
 
-        img.onload = () => {
-          viewport.innerHTML = '';
-          img.style.width = '100%';
-          img.style.height = '100%';
-          img.style.objectFit = 'contain';
-          img.style.borderRadius = '18px';
-          viewport.appendChild(img);
-          btn.disabled = false;
-          btnText.innerText = 'Сгенерировать шедевр';
-        };
+        const blob = await res.blob();
+        const localBlobUrl = URL.createObjectURL(blob);
 
-        img.onerror = () => {
-          viewport.innerHTML = `
-            <div class="state-message" style="color: #f87171;">
-              <div style="font-size: 26px;">⚠️</div>
-              <div style="font-size: 13px;">Шлюз перегружен, нажмите кнопку еще раз</div>
-            </div>
-          `;
-          btn.disabled = false;
-          btnText.innerText = 'Сгенерировать шедевр';
-        };
-
-        img.src = directUrl;
+        viewport.innerHTML = `<img src="${localBlobUrl}" alt="AI Artwork" style="width: 100%; height: 100%; object-fit: contain; border-radius: 18px;">`;
 
       } catch (err) {
         viewport.innerHTML = `
           <div class="state-message" style="color: #f87171;">
             <div style="font-size: 26px;">⚠️</div>
-            <div style="font-size: 13px;">Ошибка: ${err.message}</div>
+            <div style="font-size: 13px;">${err.message}. Попробуйте еще раз.</div>
           </div>
         `;
+      } finally {
         btn.disabled = false;
         btnText.innerText = 'Сгенерировать шедевр';
       }
     }
   </script>
-  
 </body>
 </html>
