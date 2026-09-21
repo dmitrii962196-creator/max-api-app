@@ -20,14 +20,6 @@ class GenerateRequest(BaseModel):
     style: str
     ratio: str
 
-STYLE_MODIFIERS = {
-    "Реализм": "фотореализм, высокое разрешение, 8k, детальная текстура, реалистичное освещение, шедевр",
-    "Кино": "кадр из фильма, кинематографичное освещение, 35мм, кинематограф, глубокие тени",
-    "Аниме": "аниме стиль, яркие цвета, стилистика Макото Синкая, качественный арт",
-    "3D": "3D рендер, Unreal Engine 5, Octane render, объемное освещение, четкие детали",
-    "GTA 5": "стиль загрузочного экрана GTA V, цифровая иллюстрация Rockstar Games"
-}
-
 @app.get("/")
 def health_check():
     return {"status": "ok"}
@@ -44,52 +36,38 @@ def generate_media(req: GenerateRequest):
     }
 
     try:
-        # 1. Формируем промпт
-        raw_text = req.prompt.lower()
-        for word in ["сгенерируй", "сгенирируй", "создай", "нарисуй", "покажи"]:
-            raw_text = raw_text.replace(word, "")
-        raw_text = raw_text.strip()
+        # 1. Запрашиваем точный список моделей у вашего аккаунта APImira
+        models_resp = requests.get("https://apimira.com/v1/models", headers=headers, timeout=15)
+        
+        if models_resp.status_code != 200:
+            raise Exception(f"Не удалось получить модели ({models_resp.status_code}): {models_resp.text}")
 
-        style_suffix = STYLE_MODIFIERS.get(req.style, "")
-        final_prompt = f"{raw_text}, {style_suffix}".strip(", ")
+        models_data = models_resp.json()
+        all_ids = [m.get("id") for m in models_data.get("data", [])]
 
-        dimensions = {
-            "1:1": "1024x1024",
-            "9:16": "1024x1792",
-            "16:9": "1792x1024"
-        }
-        size = dimensions.get(req.ratio, "1024x1024")
+        # Ищем модели для картинок (image, flux, dalle, sd, midjourney)
+        image_models = [m for m in all_ids if any(k in m.lower() for k in ["image", "flux", "dall", "sd", "midjourney", "diffusion"])]
 
-        # 2. Список наиболее вероятных названий моделей для изображений в APImira
-        candidates = [
-            "openai/dall-e-3",
-            "black-forest-labs/flux-1-schnell",
-            "black-forest-labs/flux-1-dev",
-            "stabilityai/stable-diffusion-xl-base-1.0",
-            "dall-e-3"
-        ]
-
-        # 3. Делаем попытку отправки запроса
-        last_error = ""
-        for model_name in candidates:
+        # 2. Если нашли подходящую модель для картинок — пробуем сделать генерацию
+        if image_models:
+            chosen_model = image_models[0]
             url = "https://apimira.com/v1/images/generations"
             payload = {
-                "model": model_name,
-                "prompt": final_prompt,
-                "size": size,
+                "model": chosen_model,
+                "prompt": req.prompt,
+                "size": "1024x1024",
                 "n": 1
             }
-
-            resp = requests.post(url, headers=headers, json=payload, timeout=60)
-            if resp.status_code == 200:
-                data = resp.json()
+            gen_resp = requests.post(url, headers=headers, json=payload, timeout=60)
+            if gen_resp.status_code == 200:
+                data = gen_resp.json()
                 image_url = data["data"][0].get("url") or data["data"][0].get("b64_json")
                 return {"type": "image", "url": image_url}
             else:
-                last_error = f"{model_name}: {resp.text}"
+                raise Exception(f"Модель {chosen_model} выдала ошибку: {gen_resp.text}")
 
-        # Если ни одна стандартная модель не подошла, выводим ответ сервиса
-        raise Exception(f"Доступные модели отклонили запрос: {last_error}")
+        # 3. Если автоматический фильтр не нашел слово 'image', покажем список всех доступных в аккаунте моделей
+        raise Exception(f"Список доступных моделей на аккаунте: {all_ids[:8]}")
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
