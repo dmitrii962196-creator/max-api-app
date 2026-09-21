@@ -1,8 +1,7 @@
-import os
+import urllib.parse
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import replicate
 
 app = FastAPI(title="MAX AI Generator Backend")
 
@@ -21,53 +20,36 @@ class GenerateRequest(BaseModel):
     ratio: str
 
 STYLE_MODIFIERS = {
-    "Реализм": "photorealistic, hyperrealistic, 8k resolution, highly detailed, raw photo",
-    "Кино": "cinematic lighting, 35mm film photograph, dramatic atmosphere, cinematic composition",
-    "Аниме": "anime style, Makoto Shinkai aesthetic, vibrant colors, detailed line art",
-    "3D": "3D render, Unreal Engine 5, Octane render, smooth lighting, volumetric glow",
-    "GTA 5": "Grand Theft Auto V art style, loading screen illustration, bold digital painting"
+    "Реализм": "photorealistic, hyperrealistic, 8k, detailed, raw photo",
+    "Кино": "cinematic lighting, 35mm film photograph, masterpiece",
+    "Аниме": "anime style, Makoto Shinkai aesthetic, vibrant colors",
+    "3D": "3D render, Unreal Engine 5, Octane render, volumetric lighting",
+    "GTA 5": "Grand Theft Auto V art style, loading screen illustration"
 }
 
 @app.get("/")
 def health_check():
-    return {"status": "ok", "service": "AI Studio Backend"}
+    return {"status": "ok"}
 
 @app.post("/api/generate")
 def generate_media(req: GenerateRequest):
-    api_token = os.getenv("REPLICATE_API_TOKEN")
-    if not api_token:
-        raise HTTPException(status_code=500, detail="REPLICATE_API_TOKEN не настроен на сервере")
-
-    style_suffix = STYLE_MODIFIERS.get(req.style, "")
-    full_prompt = f"{req.prompt}, {style_suffix}".strip(", ")
-
     try:
-        if req.mode == "image":
-            output = replicate.run(
-                "black-forest-labs/flux-schnell",
-                input={
-                    "prompt": full_prompt,
-                    "aspect_ratio": req.ratio,
-                    "output_format": "webp",
-                    "output_quality": 90
-                }
-            )
-            result_url = str(output[0])
-            return {"type": "image", "url": result_url}
+        style_suffix = STYLE_MODIFIERS.get(req.style, "")
+        full_prompt = f"{req.prompt}, {style_suffix}".strip(", ")
+        encoded_prompt = urllib.parse.quote(full_prompt)
 
-        elif req.mode == "video":
-            output = replicate.run(
-                "minimax/video-01",
-                input={
-                    "prompt": full_prompt,
-                    "prompt_optimizer": True
-                }
-            )
-            result_url = str(output)
-            return {"type": "video", "url": result_url}
+        # Разрешения под соотношение сторон
+        dimensions = {
+            "1:1": (1024, 1024),
+            "9:16": (768, 1344),
+            "16:9": (1344, 768)
+        }
+        width, height = dimensions.get(req.ratio, (1024, 1024))
 
-        else:
-            raise HTTPException(status_code=400, detail="Неверный режим")
+        # Бесплатная генерация Flux через открытый шлюз Pollinations
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={width}&height={height}&model=flux&nologo=true"
+
+        return {"type": "image", "url": image_url}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка генерации: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
