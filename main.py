@@ -1,4 +1,6 @@
 import os
+import random
+import urllib.parse
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -6,6 +8,7 @@ import requests
 
 app = FastAPI(title="MAX AI Generator Backend")
 
+# Полный доступ без блокировок CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,6 +23,14 @@ class GenerateRequest(BaseModel):
     style: str
     ratio: str
 
+STYLE_MODIFIERS = {
+    "Реализм": "photorealistic photography, 8k resolution, raw photo, highly detailed, photorealistic",
+    "Кино": "cinematic lighting, 35mm film photography, masterpiece, dramatic atmosphere, movie still",
+    "Аниме": "anime illustration, Makoto Shinkai style, vibrant colors, clean lines",
+    "3D": "3D digital render, Unreal Engine 5, Octane 3D render, smooth textures",
+    "GTA 5": "Grand Theft Auto V loading screen art style, bold digital illustration, Rockstar Games art"
+}
+
 @app.get("/")
 def health_check():
     return {"status": "ok"}
@@ -27,47 +38,56 @@ def health_check():
 @app.post("/api/generate")
 def generate_media(req: GenerateRequest):
     api_key = os.getenv("APIMIRA_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="APIMIRA_KEY не настроен на Render")
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
+    # 1. Очищаем текст от лишних слов
+    clean_text = req.prompt.lower()
+    for w in ["сгенерируй", "сгенирируй", "создай", "нарисуй", "покажи"]:
+        clean_text = clean_text.replace(w, "")
+    clean_text = clean_text.strip()
 
-    try:
-        # 1. Запрашиваем точный список моделей у вашего аккаунта APImira
-        models_resp = requests.get("https://apimira.com/v1/models", headers=headers, timeout=15)
-        
-        if models_resp.status_code != 200:
-            raise Exception(f"Не удалось получить модели ({models_resp.status_code}): {models_resp.text}")
+    english_prompt = clean_text
 
-        models_data = models_resp.json()
-        all_ids = [m.get("id") for m in models_data.get("data", [])]
-
-        # Ищем модели для картинок (image, flux, dalle, sd, midjourney)
-        image_models = [m for m in all_ids if any(k in m.lower() for k in ["image", "flux", "dall", "sd", "midjourney", "diffusion"])]
-
-        # 2. Если нашли подходящую модель для картинок — пробуем сделать генерацию
-        if image_models:
-            chosen_model = image_models[0]
-            url = "https://apimira.com/v1/images/generations"
-            payload = {
-                "model": chosen_model,
-                "prompt": req.prompt,
-                "size": "1024x1024",
-                "n": 1
+    # 2. Переводим и улучшаем промпт через APImira (GPT), если ключ указан
+    if api_key:
+        try:
+            apimira_url = "https://apimira.com/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
             }
-            gen_resp = requests.post(url, headers=headers, json=payload, timeout=60)
-            if gen_resp.status_code == 200:
-                data = gen_resp.json()
-                image_url = data["data"][0].get("url") or data["data"][0].get("b64_json")
-                return {"type": "image", "url": image_url}
-            else:
-                raise Exception(f"Модель {chosen_model} выдала ошибку: {gen_resp.text}")
+            system_msg = "Translate the user input into a concise, detailed English image generation prompt. Output ONLY the English prompt, no explanations."
+            payload = {
+                "model": "openai/gpt-4o-mini",
+                "messages": [
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": clean_text}
+                ],
+                "max_tokens": 80
+            }
+            res = requests.post(apimira_url, headers=headers, json=payload, timeout=7)
+            if res.status_code == 200:
+                english_prompt = res.json()["choices"][0]["message"]["content"].strip()
+        except Exception:
+            pass
 
-        # 3. Если автоматический фильтр не нашел слово 'image', покажем список всех доступных в аккаунте моделей
-        raise Exception(f"Список доступных моделей на аккаунте: {all_ids[:8]}")
+    # 3. Добавляем стиль
+    style_suffix = STYLE_MODIFIERS.get(req.style, "")
+    full_prompt = f"{english_prompt}, {style_suffix}".strip(", ")
+    encoded_prompt = urllib.parse.quote(full_prompt)
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
+    # 4. Размеры
+    dimensions = {
+        "1:1": (768, 768),
+        "9:16": (576, 1024),
+        "16:9": (1024, 576)
+    }
+    width, height = dimensions.get(req.ratio, (768, 768))
+    seed = random.randint(1000, 9999999)
+
+    # 5. Прямой CDN-генератор Flux
+    image_url = (
+        f"https://image.pollinations.ai/prompt/{encoded_prompt}"
+        f"?width={width}&height={height}&model=flux&seed={seed}&nologo=true"
+    )
+
+    return {"type": "image", "url": image_url}
