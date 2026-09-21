@@ -40,13 +40,13 @@ def generate_media(req: GenerateRequest):
         raise HTTPException(status_code=500, detail="APIMIRA_KEY не настроен на Render")
 
     try:
-        # 1. Очищаем вводные слова
+        # 1. Очищаем вводные команды
         raw_text = req.prompt.lower()
         for word in ["сгенерируй", "сгенирируй", "создай", "нарисуй", "покажи"]:
             raw_text = raw_text.replace(word, "")
         raw_text = raw_text.strip()
 
-        # 2. Добавляем стили
+        # 2. Добавляем выбранный стиль
         style_suffix = STYLE_MODIFIERS.get(req.style, "")
         final_prompt = f"{raw_text}, {style_suffix}".strip(", ")
 
@@ -58,8 +58,8 @@ def generate_media(req: GenerateRequest):
         }
         size = dimensions.get(req.ratio, "1024x1024")
 
-        # 4. Точный официальный URL APImira
-        url = "https://api.apimira.com/v1/images/generations"
+        # 4. Точный официальный URL APImira (apimira.com/v1)
+        url = "https://apimira.com/v1/images/generations"
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
