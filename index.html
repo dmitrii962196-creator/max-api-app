@@ -392,7 +392,7 @@
         <div class="state-message">
           <div class="loader-ring"></div>
           <div style="color: #cbd5e1; font-weight: 500;">Нейросеть рисует кадр...</div>
-          <div style="font-size: 11.5px; color: var(--text-dim);">Генерация занимает около 5-10 секунд</div>
+          <div style="font-size: 11.5px; color: var(--text-dim);">Обычно это занимает 6-12 секунд</div>
         </div>
       `;
 
@@ -411,28 +411,52 @@
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || 'Ошибка сервера');
 
-        // Создаем изображение в памяти и вставляем только тогда, когда оно полностью скачалось
-        const tempImg = new Image();
-        tempImg.crossOrigin = "anonymous";
-        tempImg.referrerPolicy = "no-referrer";
-        
-        tempImg.onload = () => {
-          viewport.innerHTML = '';
-          tempImg.style.width = '100%';
-          tempImg.style.height = '100%';
-          tempImg.style.objectFit = 'contain';
-          tempImg.style.borderRadius = '18px';
-          viewport.appendChild(tempImg);
-          btn.disabled = false;
-          btnText.innerText = 'Сгенерировать шедевр';
+        let attempts = 0;
+        const loadImage = (url) => {
+          const tempImg = new Image();
+          tempImg.crossOrigin = "anonymous";
+          tempImg.referrerPolicy = "no-referrer";
+
+          const timeout = setTimeout(() => {
+            tempImg.src = "";
+            handleFail();
+          }, 18000);
+
+          tempImg.onload = () => {
+            clearTimeout(timeout);
+            viewport.innerHTML = '';
+            tempImg.style.width = '100%';
+            tempImg.style.height = '100%';
+            tempImg.style.objectFit = 'contain';
+            tempImg.style.borderRadius = '18px';
+            viewport.appendChild(tempImg);
+            btn.disabled = false;
+            btnText.innerText = 'Сгенерировать шедевр';
+          };
+
+          const handleFail = () => {
+            clearTimeout(timeout);
+            attempts++;
+            if (attempts <= 2) {
+              const retrySeed = Math.floor(Math.random() * 1000000);
+              loadImage(url.replace(/seed=\d+/, `seed=${retrySeed}`));
+            } else {
+              viewport.innerHTML = `
+                <div class="state-message" style="color: #f87171;">
+                  <div style="font-size: 26px;">⚠️</div>
+                  <div style="font-size: 13px;">Шлюз перегружен, нажмите кнопку еще раз</div>
+                </div>
+              `;
+              btn.disabled = false;
+              btnText.innerText = 'Сгенерировать шедевр';
+            }
+          };
+
+          tempImg.onerror = handleFail;
+          tempImg.src = url;
         };
 
-        tempImg.onerror = () => {
-          // Если сеть мигнула, делаем одну тихую попытку через CDN зеркало
-          tempImg.src = data.url + '&retry=1';
-        };
-
-        tempImg.src = data.url;
+        loadImage(data.url);
 
       } catch (err) {
         viewport.innerHTML = `
