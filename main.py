@@ -23,7 +23,7 @@ class GenerateRequest(BaseModel):
     ratio: str
 
 STYLE_MODIFIERS = {
-    "Реализм": "hyperrealistic photography, 8k resolution, raw photo, highly detailed, photorealistic",
+    "Реализм": "hyperrealistic photography, 8k, raw photo, highly detailed, photorealistic, 35mm lens",
     "Кино": "cinematic shot, dramatic atmosphere, cinematic lighting, masterpiece, movie still",
     "Аниме": "beautiful anime illustration, Makoto Shinkai style, vibrant colorful anime art",
     "3D": "3D digital render, Unreal Engine 5, Octane render, ultra-detailed 3d textures",
@@ -31,7 +31,7 @@ STYLE_MODIFIERS = {
 }
 
 def translate_to_en(text: str) -> str:
-    """Переводит русский запрос на английский язык"""
+    """Переводит русский запрос на английский"""
     try:
         url = f"https://api.mymemory.translated.net/get?q={urllib.parse.quote(text)}&langpair=ru|en"
         res = requests.get(url, timeout=5).json()
@@ -47,34 +47,43 @@ def health_check():
 @app.post("/api/generate")
 def generate_media(req: GenerateRequest):
     try:
-        # 1. Очистка и автоперевод
-        clean_prompt = req.prompt.lower().replace("создай", "").replace("нарисуй", "").strip()
+        # 1. Очищаем лишние слова («создай», «нарисуй») и переводим
+        clean_prompt = (
+            req.prompt.lower()
+            .replace("сгенерируй", "")
+            .replace("создай", "")
+            .replace("нарисуй", "")
+            .strip()
+        )
         english_prompt = translate_to_en(clean_prompt)
-
-        # 2. Модификатор стиля
         style_suffix = STYLE_MODIFIERS.get(req.style, "")
         final_prompt = f"{english_prompt}, {style_suffix}".strip(", ")
         encoded_prompt = urllib.parse.quote(final_prompt)
 
-        # 3. Размеры кадра
+        # 2. Размеры под телефон для быстрой отдачи
         dimensions = {
-            "1:1": (1024, 1024),
-            "9:16": (768, 1344),
-            "16:9": (1344, 768)
+            "1:1": (768, 768),
+            "9:16": (576, 1024),
+            "16:9": (1024, 576)
         }
-        width, height = dimensions.get(req.ratio, (1024, 1024))
+        width, height = dimensions.get(req.ratio, (768, 768))
         seed = random.randint(1, 9999999)
 
-        # 4. Скоростная модель turbo (отдает результат за 3-5 секунд без очередей)
+        # 3. Скоростной генератор
         target_url = (
             f"https://image.pollinations.ai/prompt/{encoded_prompt}"
             f"?width={width}&height={height}&model=turbo&seed={seed}&nologo=true"
         )
 
-        resp = requests.get(target_url, timeout=25)
-        if resp.status_code != 200:
-            raise Exception("Сбой сервера генерации, попробуйте еще раз.")
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        resp = requests.get(target_url, headers=headers, timeout=30)
 
+        if resp.status_code != 200:
+            raise Exception(f"Ошибка шлюза: {resp.status_code}")
+
+        # Отдаем готовую картинку в Base64
         b64_image = base64.b64encode(resp.content).decode("utf-8")
         data_url = f"data:image/jpeg;base64,{b64_image}"
 
