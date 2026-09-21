@@ -22,10 +22,10 @@ class GenerateRequest(BaseModel):
     ratio: str
 
 STYLE_MODIFIERS = {
-    "Реализм": "фотореализм, высокое разрешение, 8k, детальная текстура, реалистичное освещение",
-    "Кино": "кадр из фильма, кинематографичное освещение, 35мм, атмосферный шедевр",
-    "Аниме": "аниме стиль, яркие цвета, стилистика Макото Синкая, детальный арт",
-    "3D": "3D рендер, Unreal Engine 5, Octane render, объемное освещение",
+    "Реализм": "фотореализм, высокое разрешение, 8k, детальная текстура, реалистичное освещение, шедевр",
+    "Кино": "кадр из фильма, кинематографичное освещение, 35мм, кинематограф, глубокие тени",
+    "Аниме": "аниме стиль, яркие цвета, стилистика Макото Синкая, качественный арт",
+    "3D": "3D рендер, Unreal Engine 5, Octane render, объемное освещение, четкие детали",
     "GTA 5": "стиль загрузочного экрана GTA V, цифровая иллюстрация Rockstar Games"
 }
 
@@ -46,7 +46,7 @@ def generate_media(req: GenerateRequest):
             raw_text = raw_text.replace(word, "")
         raw_text = raw_text.strip()
 
-        # 2. Добавляем визуальный стиль (APImira отлично понимает русский язык)
+        # 2. Добавляем стили
         style_suffix = STYLE_MODIFIERS.get(req.style, "")
         final_prompt = f"{raw_text}, {style_suffix}".strip(", ")
 
@@ -58,8 +58,8 @@ def generate_media(req: GenerateRequest):
         }
         size = dimensions.get(req.ratio, "1024x1024")
 
-        # 4. Запрос к APImira
-        url = "https://api.apimira.ru/v1/images/generations"
+        # 4. Точный официальный URL APImira
+        url = "https://api.apimira.com/v1/images/generations"
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
